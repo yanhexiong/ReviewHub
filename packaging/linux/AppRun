@@ -1,0 +1,160 @@
+#!/bin/sh
+set -eu
+
+app_dir="${APPDIR:-}"
+if [ -z "$app_dir" ]; then
+  app_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+fi
+app_root="$app_dir/usr/lib/review-hub"
+api_binary="$app_root/bin/review-hub-api"
+if [ ! -x "$api_binary" ] || [ ! -f "$app_root/out/index.html" ]; then
+  echo "Review Hub runtime is incomplete." >&2
+  exit 1
+fi
+
+data_home="${XDG_DATA_HOME:-${HOME:-}/.local/share}"
+config_home="${XDG_CONFIG_HOME:-${HOME:-}/.config}"
+if [ -z "$data_home" ] || [ "$data_home" = "/.local/share" ]; then
+  echo "Set HOME or XDG_DATA_HOME before starting Review Hub." >&2
+  exit 1
+fi
+if [ -z "$config_home" ] || [ "$config_home" = "/.config" ]; then
+  echo "Set HOME or XDG_CONFIG_HOME before starting Review Hub." >&2
+  exit 1
+fi
+
+runtime_dir="$data_home/review-hub"
+config_dir="$config_home/review-hub"
+runtime_config="$config_dir/runtime-config.json"
+data_directory="$runtime_dir/data"
+
+is_safe_data_directory() {
+  case "$1" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    /|/bin|/bin/*|/boot|/boot/*|/dev|/dev/*|/etc|/etc/*|/lib|/lib/*|/lib64|/lib64/*|/opt|/opt/*|/proc|/proc/*|/root|/root/*|/run|/run/*|/sbin|/sbin/*|/sys|/sys/*|/usr|/usr/*|/var|/var/*)
+      return 1
+      ;;
+  esac
+  case "$1" in
+    *[[:space:]\\\"\']*) return 1 ;;
+  esac
+  return 0
+}
+
+normalize_data_directory() {
+  selected="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    selected="$(realpath -m -- "$selected")" || return 1
+  fi
+  is_safe_data_directory "$selected" || return 1
+  printf '%s' "$selected"
+}
+
+write_runtime_config() {
+  umask 077
+  cat > "${runtime_config}.new" <<EOF
+{
+  "version": 1,
+  "dataDirectory": "${data_directory}",
+  "goApiListen": "127.0.0.1:39100",
+  "listenHost": "0.0.0.0",
+  "listenPort": 3000,
+  "defaults": {
+    "allowedRoots": ["${data_directory}"],
+    "maxPdfBytes": 104857600,
+    "maxImportBytes": 1073741824,
+    "maxProjectsPerUser": 20,
+    "maxUsers": 1000
+  }
+}
+EOF
+  chmod 0600 "${runtime_config}.new"
+  mv -f -- "${runtime_config}.new" "$runtime_config"
+}
+
+umask 077
+mkdir -p "$runtime_dir" "$config_dir"
+chmod 700 "$runtime_dir" "$config_dir" 2>/dev/null || true
+
+if [ -f "$runtime_config" ]; then
+  configured_data_directory="$(sed -nE 's/^[[:space:]]*"dataDirectory"[[:space:]]*:[[:space:]]*"([^"\\]+)"[[:space:]]*,?[[:space:]]*$/\1/p' "$runtime_config" | head -n 1)"
+  if [ -z "$configured_data_directory" ]; then
+    echo "Review Hub runtime configuration is invalid." >&2
+    exit 1
+  fi
+  data_directory="$configured_data_directory"
+  case "$configured_data_directory" in
+    /*) ;;
+    *) data_directory="" ;;
+  esac
+  case "$configured_data_directory" in
+    *[[:space:]\\\"\']*) data_directory="" ;;
+  esac
+  if [ -n "$configured_data_directory" ] && [ -n "$data_directory" ] && command -v realpath >/dev/null 2>&1; then
+    data_directory="$(realpath -m -- "$configured_data_directory")"
+  elif [ -n "$configured_data_directory" ] && [ -z "$data_directory" ]; then
+    data_directory=""
+  fi
+  if [ -z "$data_directory" ]; then
+    echo "Review Hub runtime configuration is invalid." >&2
+    exit 1
+  fi
+else
+  data_directory="$(normalize_data_directory "$data_directory" 2>/dev/null || true)"
+  if [ -z "$data_directory" ]; then
+    echo "Review Hub default data directory is invalid." >&2
+    exit 1
+  fi
+  mkdir -p "$data_directory"
+  write_runtime_config
+fi
+
+mkdir -p "$data_directory"
+chmod 700 "$data_directory" 2>/dev/null || true
+
+install_runtime() {
+  code_server_directory="$data_directory/code-server"
+  extensions_directory="$data_directory/vscode-extensions"
+  REVIEW_HUB_CODE_SERVER_DIR="$code_server_directory" \
+    bash "$app_root/install/install-code-server.sh"
+  REVIEW_HUB_CODE_SERVER_DIR="$code_server_directory" \
+    REVIEW_HUB_NODE_BIN="$code_server_directory/lib/node" \
+    REVIEW_HUB_RUNTIME_DATA_DIR="$data_directory" \
+    REVIEW_HUB_VSCODE_EXTENSIONS_DIR="$extensions_directory" \
+    bash "$app_root/install/install-vscode-extensions.sh"
+}
+
+if [ "${1:-}" = "--install-runtime" ]; then
+  install_runtime
+  exit 0
+fi
+
+export NODE_ENV=production
+export REVIEW_HUB_STATIC_DIR="$app_root/out"
+export REVIEW_HUB_EDITOR_ASSETS_DIR="$app_root/static/editor-assets"
+export REVIEW_HUB_PDF_WORKER_PATH="$app_root/static/pdf-worker.js"
+export PAPER_REVIEW_VSCODE_SERVER_BIN="$data_directory/code-server/bin/code-server"
+export REVIEW_HUB_VSCODE_EXTENSIONS_DIR="$data_directory/vscode-extensions"
+export REVIEW_HUB_RUNTIME_DATA_DIR="$data_directory"
+export REVIEW_HUB_UPDATER_BIN="$app_root/bin/review-hub-updater"
+export REVIEW_HUB_GO_API_BIN="$api_binary"
+if [ -n "${APPIMAGE:-}" ] && [ -f "$APPIMAGE" ]; then
+  export REVIEW_HUB_APPIMAGE_PATH="$APPIMAGE"
+fi
+
+"$api_binary" "$@" &
+api_pid=$!
+shutdown() {
+  trap - INT TERM
+  kill -TERM "$api_pid" 2>/dev/null || true
+  wait "$api_pid" 2>/dev/null || true
+}
+trap shutdown INT TERM
+set +e
+wait "$api_pid"
+status=$?
+set -e
+exit "$status"

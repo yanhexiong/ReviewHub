@@ -1,0 +1,246 @@
+# Release automation for version tags on the main release line.
+
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate, build, and publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Go for the static update helper
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.0"
+          check-latest: false
+
+      - name: Validate release tag and manifest version
+        id: release
+        env:
+          SELECTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_tag="$SELECTED_TAG"
+          if ! [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use vX.Y.Z format; received: $release_tag" >&2
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/$release_tag^{commit}" >/dev/null
+
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v$package_version"
+          if [ "$release_tag" != "$expected_tag" ]; then
+            echo "Tag $release_tag does not match package.json version $package_version" >&2
+            exit 1
+          fi
+
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Go database schema and migrations
+        run: npm run db:check
+
+      - name: Type-check application
+        run: npm run typecheck
+
+      - name: Lint application
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Install Chromium for end-to-end tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Test and build static Go services
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          (
+            cd updater
+            test -z "$(gofmt -d .)"
+            go test ./...
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w" \
+              -o "$GITHUB_WORKSPACE/.release/review-hub-updater" .
+          )
+          (
+            cd backend
+            test -z "$(gofmt -d .)"
+            go test ./...
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w -X github.com/yanhexiong/review-hub/backend/internal/update.BuildVersion=${{ steps.release.outputs.version }}" \
+              -o "$GITHUB_WORKSPACE/.release/review-hub-api" \
+              ./cmd/review-hub-api
+          )
+          test -x .release/review-hub-updater
+          test -x .release/review-hub-api
+
+      - name: Download verified AppImage builder
+        id: appimagetool
+        env:
+          APPIMAGETOOL_SHA256: a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          curl --fail --location --silent --show-error --output "$tool" \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          printf '%s  %s\n' "$APPIMAGETOOL_SHA256" "$tool" | sha256sum --check --status
+          chmod 755 "$tool"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$tool" --version
+          echo "path=$tool" >> "$GITHUB_OUTPUT"
+
+      - name: Build self-contained Linux AppImage
+        id: package
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APPIMAGETOOL_BIN: ${{ steps.appimagetool.outputs.path }}
+        run: |
+          set -euo pipefail
+          REVIEW_HUB_RELEASE_VERSION="$RELEASE_TAG" \
+            REVIEW_HUB_UPDATER_BIN="$GITHUB_WORKSPACE/.release/review-hub-updater" \
+            REVIEW_HUB_GO_API_BIN="$GITHUB_WORKSPACE/.release/review-hub-api" \
+            APPIMAGE_OUTPUT_DIR="$GITHUB_WORKSPACE/dist" \
+            bash scripts/build-appimage.sh
+          appimage="dist/ReviewHub-${RELEASE_TAG}-x86_64.AppImage"
+          test -x "$appimage"
+          (
+            cd dist
+          )
+
+          offline_bundle="dist/ReviewHub-${RELEASE_TAG}-x86_64.update.tar.gz"
+          bash scripts/create-offline-update-bundle.sh \
+            --appimage "$appimage" \
+            --version "$RELEASE_TAG" \
+            --output "$offline_bundle"
+          (
+            cd dist
+            sha256sum "$(basename "$appimage")" "$(basename "$offline_bundle")" > SHA256SUMS
+          )
+
+          echo "appimage=$appimage" >> "$GITHUB_OUTPUT"
+          echo "offline_bundle=$offline_bundle" >> "$GITHUB_OUTPUT"
+          echo "checksums=dist/SHA256SUMS" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test the AppImage without FUSE
+        env:
+          APPIMAGE: ${{ steps.package.outputs.appimage }}
+        run: |
+          set -euo pipefail
+          runtime_root="$(mktemp -d)"
+          config_home="$runtime_root/config"
+          data_home="$runtime_root/data"
+          server_log="$RUNNER_TEMP/review-hub-appimage.log"
+          mkdir -p "$config_home" "$data_home"
+          XDG_CONFIG_HOME="$config_home" XDG_DATA_HOME="$data_home" \
+            APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" > "$server_log" 2>&1 &
+          process_id=$!
+          print_server_log() {
+            echo "AppImage server log:"
+            if [[ -s "$server_log" ]]; then
+              cat "$server_log"
+            else
+              echo "(no application output was captured)"
+            fi
+          }
+          cleanup() {
+            kill "$process_id" 2>/dev/null || true
+            wait "$process_id" 2>/dev/null || true
+            rm -rf "$runtime_root"
+          }
+          trap cleanup EXIT
+          ready=false
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --max-time 2 \
+              http://127.0.0.1:3000/api/system/health >/dev/null; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$process_id" 2>/dev/null; then
+              echo "AppImage exited before the health check became ready." >&2
+              print_server_log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            echo "AppImage did not become ready within 40 seconds." >&2
+            print_server_log >&2
+            exit 1
+          fi
+          test -s "$config_home/review-hub/session-secret"
+          curl --fail --silent --show-error http://127.0.0.1:3000/login/ | grep -q '<title>'
+          curl --fail --silent --show-error http://127.0.0.1:3000/projects/example/review/ | grep -q '__NEXT_DATA__\|self.__next_f'
+
+      - name: Upload failed release diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-release-${{ steps.release.outputs.tag }}
+          path: |
+            dist/
+            ${{ runner.temp }}/review-hub-appimage.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APPIMAGE: ${{ steps.package.outputs.appimage }}
+          OFFLINE_BUNDLE: ${{ steps.package.outputs.offline_bundle }}
+          CHECKSUMS: ${{ steps.package.outputs.checksums }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null; then
+            gh release upload "$RELEASE_TAG" "$APPIMAGE" "$OFFLINE_BUNDLE" "$CHECKSUMS" \
+              --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" "$APPIMAGE" "$OFFLINE_BUNDLE" "$CHECKSUMS" \
+              --verify-tag --generate-notes --title "Review Hub $RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY"
+          fi

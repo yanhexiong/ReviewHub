@@ -1,0 +1,10 @@
+prompt.md
+out/
+dist/
+coverage/
+test-results/
+playwright-report/
+node_modules/
+.next/
+data/
+vendor/code-server/

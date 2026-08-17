@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Review Hub
+Comment=Paper PDF review and version management
+Exec=review-hub
+Icon=review-hub
+Terminal=false
+Categories=Office;Science;Development;

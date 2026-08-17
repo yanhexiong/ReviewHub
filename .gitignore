@@ -1,0 +1,19 @@
+node_modules/
+.next/
+out/
+data/
+.env.local
+.env.github-test.local
+.review-hub/
+playwright-report/
+test-results/
+coverage/
+dist/
+.release/
+backend/bin/
+*.tsbuildinfo
+# Independent code-server installed by scripts/install-code-server.sh
+vendor/code-server/
+# Local product instructions; these remain available in a working copy only.
+AGENTS.md
+prompt.md

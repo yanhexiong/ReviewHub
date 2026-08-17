@@ -1,0 +1,62 @@
+{
+  "name": "review-hub",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0 <25",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "node scripts/next-build.mjs build",
+    "start": "tsx server.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:check": "bash scripts/check-database-schema.sh",
+    "vscode:install-server": "bash scripts/install-code-server.sh",
+    "vscode:setup": "bash scripts/install-code-server.sh && bash scripts/install-vscode-extensions.sh",
+    "vscode:install-extensions": "bash scripts/install-vscode-extensions.sh",
+    "vscode:check-extensions": "bash scripts/install-vscode-extensions.sh --check",
+    "snapshot": "node scripts/create-snapshot-after-build.mjs"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-sc": "5.2.7",
+    "@monaco-editor/react": "^4.7.0",
+    "@react-pdf-viewer/core": "^3.12.0",
+    "@react-pdf-viewer/highlight": "^3.12.0",
+    "@react-pdf-viewer/page-navigation": "^3.12.0",
+    "@react-pdf-viewer/search": "^3.12.0",
+    "@react-pdf-viewer/zoom": "^3.12.0",
+    "diff": "^8.0.4",
+    "http-proxy": "1.18.1",
+    "lucide-react": "^0.468.0",
+    "monaco-editor": "^0.56.0",
+    "next": "^15.5.23",
+    "pdfjs-dist": "^3.11.174",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@playwright/test": "^1.49.1",
+    "@types/http-proxy": "1.17.15",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.1.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "overrides": {
+    "dompurify": "3.4.13",
+    "nanoid": "3.3.18"
+  }
+}

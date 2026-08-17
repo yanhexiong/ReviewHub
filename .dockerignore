@@ -1,0 +1,10 @@
+node_modules
+.next
+data
+vendor/code-server
+.git
+*.log
+test-results
+playwright-report
+.env.local
+.env.github-test.local
