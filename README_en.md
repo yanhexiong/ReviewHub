@@ -216,4 +216,12 @@ Original Review Hub code is released under the [Apache License 2.0](LICENSE); at
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yanhexiong/ReviewHub&type=Date)](https://www.star-history.com/#yanhexiong/ReviewHub&Date)
+## Star History
+
+<a href="https://www.star-history.com/?repos=yanhexiong%2FReviewHub&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yanhexiong/ReviewHub&type=date&theme=dark&legend=top-left&sealed_token=0hswiFdJkER4if9qDZg7FkmDNhZur760DXTK2xGnbS8K7JaXwEzQQhshzQdVxlEEccPdWZqDYOclbDfk23pCmfZZhPf0946tNoAdF666EBb9MvQW3OQIPA" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yanhexiong/ReviewHub&type=date&legend=top-left&sealed_token=0hswiFdJkER4if9qDZg7FkmDNhZur760DXTK2xGnbS8K7JaXwEzQQhshzQdVxlEEccPdWZqDYOclbDfk23pCmfZZhPf0946tNoAdF666EBb9MvQW3OQIPA" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yanhexiong/ReviewHub&type=date&legend=top-left&sealed_token=0hswiFdJkER4if9qDZg7FkmDNhZur760DXTK2xGnbS8K7JaXwEzQQhshzQdVxlEEccPdWZqDYOclbDfk23pCmfZZhPf0946tNoAdF666EBb9MvQW3OQIPA" />
+ </picture>
+</a>
