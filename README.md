@@ -208,8 +208,6 @@ Review Hub 的原创代码以 [Apache License 2.0](LICENSE) 发布，版权与�
 
 ## Star History
 
-## Star History
-
 <a href="https://www.star-history.com/?repos=yanhexiong%2FReviewHub&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yanhexiong/ReviewHub&type=date&theme=dark&legend=top-left&sealed_token=0hswiFdJkER4if9qDZg7FkmDNhZur760DXTK2xGnbS8K7JaXwEzQQhshzQdVxlEEccPdWZqDYOclbDfk23pCmfZZhPf0946tNoAdF666EBb9MvQW3OQIPA" />
