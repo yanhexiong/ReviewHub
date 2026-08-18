@@ -1,9 +1,6 @@
 # Review Hub
 
 <p align="center">
-  <img src="packaging/linux/icons/review-hub-16.svg" width="16" height="16" alt="Review Hub icon 16px">
-  <img src="packaging/linux/icons/review-hub-32.svg" width="32" height="32" alt="Review Hub icon 32px">
-  <img src="packaging/linux/icons/review-hub-48.svg" width="48" height="48" alt="Review Hub icon 48px">
   <img src="packaging/linux/icons/review-hub-64.svg" width="64" height="64" alt="Review Hub icon 64px">
 </p>
 
